@@ -1,0 +1,415 @@
+definitions:
+  pod.Container:
+    properties:
+      container_name:
+        type: string
+      current_usages:
+        additionalProperties:
+          type: number
+        type: object
+      limits:
+        additionalProperties:
+          type: number
+        type: object
+      namespace:
+        type: string
+      optimized_usages:
+        additionalProperties:
+          type: number
+        type: object
+      pod_name:
+        type: string
+      requests:
+        additionalProperties:
+          type: number
+        type: object
+      usages:
+        additionalProperties:
+          $ref: '#/definitions/resource.ResourceUsageInfo'
+        description: Resource usage list
+        type: object
+    type: object
+  pod.Pod:
+    properties:
+      containers:
+        description: Container information
+        items:
+          $ref: '#/definitions/pod.Container'
+        type: array
+      name:
+        type: string
+      namespace:
+        type: string
+    type: object
+  resource.ResourceUsageInfo:
+    properties:
+      current_usage:
+        type: number
+      limit:
+        type: number
+      name:
+        type: string
+      optimized_usage:
+        type: number
+      usage:
+        items:
+          $ref: '#/definitions/resource.TimeSeriesDatapoint'
+        type: array
+    type: object
+  resource.TimeSeriesDatapoint:
+    properties:
+      time:
+        type: integer
+      value:
+        type: number
+    type: object
+  vm.Vm:
+    properties:
+      name:
+        type: string
+      usages:
+        additionalProperties:
+          $ref: '#/definitions/resource.ResourceUsageInfo'
+        description: Resource usage list
+        type: object
+    type: object
+info:
+  contact: {}
+paths:
+  /api/v1/pods/{namespace}/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Get all resource usage history and optimization usage value
+      parameters:
+      - description: the name of pod
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: the namespace of pod
+        in: path
+        name: namespace
+        required: true
+        type: string
+      - description: start time
+        in: query
+        name: start
+        type: string
+      - description: end time
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pod.Pod'
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get usage history and optimization usage
+  /api/v1/pods/{namespace}/{name}/forecast:
+    get:
+      consumes:
+      - application/json
+      description: Get forecast result from TimescaleDB
+      parameters:
+      - description: the name of pod
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: the namespace of pod
+        in: path
+        name: namespace
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get pod forecast result
+  /api/v1/pods/{namespace}/{name}/resource-quota:
+    get:
+      consumes:
+      - application/json
+      description: Get pod resource quota information from TimescaleDB
+      parameters:
+      - description: the name of pod
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: the namespace of pod
+        in: path
+        name: namespace
+        required: true
+        type: string
+      - description: start time
+        in: query
+        name: start
+        type: string
+      - description: end time
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pod.Pod'
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get pod resource quota
+  /api/v1/pods/{uuid}/forecast/result:
+    get:
+      consumes:
+      - application/json
+      description: Get forecast result
+      parameters:
+      - description: the uuid of forecast task
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get vm forecast result
+  /api/v1/pods/{uuid}/forecast/status:
+    get:
+      consumes:
+      - application/json
+      description: Get forecast task status
+      parameters:
+      - description: the uuid of forecast task
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get pod forecast task status
+  /api/v1/pods/resource-quota:
+    get:
+      consumes:
+      - application/json
+      description: Get all pod resource quota information from TimescaleDB
+      parameters:
+      - description: start time
+        in: query
+        name: start
+        type: string
+      - description: end time
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pod.Pod'
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get all pod resource quota
+  /api/v1/vms/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Get all resource usage history and optimization usage value
+      parameters:
+      - description: name of the vm
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: start time
+        in: query
+        name: start
+        type: string
+      - description: end time
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get vm usage history and optimization usage
+  /api/v1/vms/{name}/forecast:
+    get:
+      consumes:
+      - application/json
+      description: Get forecast result from TimescaleDB
+      parameters:
+      - description: the name of vm
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get vm forecast result
+  /api/v1/vms/{name}/forecast/status:
+    get:
+      consumes:
+      - application/json
+      description: Get forecast task from TimescaleDB
+      parameters:
+      - description: the name of vm
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get vm forecast task status
+  /api/v1/vms/{name}/resource-quota:
+    get:
+      consumes:
+      - application/json
+      description: Get vm resource quota information from TimescaleDB
+      parameters:
+      - description: the name of vm
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get vm resource quota
+  /api/v1/vms/{uuid}/forecast/status:
+    get:
+      consumes:
+      - application/json
+      description: Get forecast task status by UUID
+      parameters:
+      - description: the uuid of forecast task
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get vm forecast task status by UUID
+  /api/v1/vms/resource-quota:
+    get:
+      consumes:
+      - application/json
+      description: Get all vm resource quota information from TimescaleDB
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/vm.Vm'
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: Get all vm resource quota
+swagger: "2.0"

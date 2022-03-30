@@ -1,0 +1,14 @@
+default_queue: "machinery_tasks"
+broker: "redis://172.23.4.101:30282"
+result_backend: "redis://172.23.4.101:30282"
+result_expire_in: 600
+redis:
+  max_idle: 3
+  max_idle_timeout: 240
+  read_timeout: 15
+  write_timeout: 15
+  connect_timeout: 15
+  normal_tasks_poll_period: 1000
+  delayed_tasks_poll_period: 500
+
+

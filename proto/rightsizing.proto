@@ -1,0 +1,65 @@
+// https://github.com/cockroachdb/cockroach/blob/master/pkg/ts/tspb/timeseries.proto 코드 참조하여 작성
+
+syntax = "proto3";
+
+package rightsizing;
+
+option go_package = "rightsizing";
+
+import "gogoproto/gogo.proto";
+
+// Enable custom Marshal method.
+option (gogoproto.marshaler_all) = true;
+// Enable custom Unmarshal method.
+option (gogoproto.unmarshaler_all) = true;
+// Enable custom Size method (Required by Marshal and Unmarshal).
+option (gogoproto.sizer_all) = true;
+// Enable registration with golang/protobuf for the grpc-gateway.
+option (gogoproto.goproto_registration) = true;
+// Enable generation of XXX_MessageName methods for grpc-go/status.
+option (gogoproto.messagename_all) = true;
+
+
+message TimeSeriesData {
+    string name = 1;
+    repeated TimeSeriesDatapoint datapoints = 2;
+}
+
+message TimeSeriesDatapoint {
+    int64 timestamp = 1;
+    double value = 2;
+}
+
+message RightsizingRequest {
+    string id = 1;
+    repeated double data = 2;
+}
+
+message RightsizingResponse {
+    string id = 1;
+    string message = 2;
+    double result = 3;
+}
+
+message ForecastRequest {
+    string id = 1;
+    repeated TimeSeriesDatapoint data = 2;
+}
+
+message ForecastResponse {
+    string id = 1;
+    string message = 2;
+    message Result {
+        string name = 1;
+        repeated TimeSeriesDatapoint data = 2;
+    }
+    repeated Result result = 3;
+}
+
+service Rightsizing {
+    rpc Rightsizing (RightsizingRequest) returns (RightsizingResponse) {}
+}
+
+service Forecast {
+    rpc Forecast (ForecastRequest) returns (ForecastResponse) {}
+}
