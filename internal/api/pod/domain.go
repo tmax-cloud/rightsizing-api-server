@@ -2,6 +2,7 @@ package pod
 
 import (
 	"context"
+	grpcclient "rightsizing-api-server/internal/grpc"
 
 	"rightsizing-api-server/internal/api/common/query"
 	"rightsizing-api-server/internal/api/common/resource"
@@ -10,15 +11,13 @@ import (
 
 type PodRepository interface {
 	GetAllPodQuota(query query.Query) ([]*Pod, error)
-	GetPodQuota(query query.Query) (*Pod, error)
 	GetAllPod(query query.Query) ([]*Pod, error)
 	GetPod(query query.Query) (*Pod, error)
 	Query(ctx context.Context, naemspace, name, startTime, endTime string) ([]*Container, error)
 }
 
 type PodService interface {
-	GetAllPodQuota(query query.Query) ([]*Pod, error)
-	GetPodQuota(query query.Query) (*Pod, error)
+	GetClusterInfo() (interface{}, error)
 	GetAllPod(query query.Query) ([]*Pod, error)
 	GetPod(query query.Query) (*Pod, error)
 	GetForecastStatusByID(uuid string) (string, error)
@@ -33,6 +32,24 @@ type Pod struct {
 	Name      string `json:"name"`
 	// Container information
 	Containers []*Container `json:"containers,omitempty"`
+	// total usage infromation
+	Usages map[string]*resource.ResourceUsageInfo `json:"usage,omitempty"`
+}
+
+func (pod *Pod) Rightsizing(client *grpcclient.Client) error {
+	for _, container := range pod.Containers {
+		for name, usage := range container.Usage {
+			if len(usage.Usage) > 100 {
+				resp, err := client.Rightsizing(context.Background(), usage.Usage)
+				if err != nil {
+					return err
+				}
+				usage.OptimizedUsage = resp.Result
+				pod.Usages[name].OptimizedUsage += resp.Result
+			}
+		}
+	}
+	return nil
 }
 
 type Container struct {
@@ -40,11 +57,7 @@ type Container struct {
 	Pod       string `json:"pod_name"`
 	Name      string `json:"container_name"`
 	// Resource usage list
-	Usage          map[string]*resource.ResourceUsageInfo `json:"usages,omitempty"`
-	CurrentUsage   map[string]float64                     `json:"current_usages,omitempty"`
-	Request        map[string]float64                     `json:"requests,omitempty"`
-	Limit          map[string]float64                     `json:"limits,omitempty"`
-	OptimizedUsage map[string]float64                     `json:"optimized_usages,omitempty"`
+	Usage map[string]*resource.ResourceUsageInfo `json:"usages,omitempty"`
 }
 
 func (c Container) UniquePod() string {

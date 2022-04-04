@@ -2,12 +2,23 @@ package resource
 
 import (
 	"encoding/base64"
+	"math"
 	"sync"
 
 	"rightsizing-api-server/internal/models"
 	pb "rightsizing-api-server/proto"
 
 	"github.com/pquerna/ffjson/ffjson"
+)
+
+const (
+	threshold = 100
+)
+
+const (
+	StatusUnknown   = "unknown"
+	StatusHealty    = "healty"
+	StatusNotHealty = "inefficient"
 )
 
 type TimeseriesData []TimeSeriesDatapoint
@@ -47,10 +58,12 @@ func DecodeForecastUsage(data string) ([]*ForecastUsage, error) {
 type ResourceUsageInfo struct {
 	lock           sync.RWMutex
 	ResourceName   string         `json:"name"`
-	Usage          TimeseriesData `json:"usage" description:"resource usage"`
-	Limit          float64        `json:"limit" description:"resource limit"`
+	Usage          TimeseriesData `json:"usage,omitempty" description:"resource usage"`
+	Request        float64        `json:"request,omitempty"`
+	Limit          float64        `json:"limit,omitempty"`
 	CurrentUsage   float64        `json:"current_usage" description:"current usage"`
 	OptimizedUsage float64        `json:"optimized_usage,omitempty"`
+	Status         *string        `json:"status,omitempty" description:"resource status"`
 }
 
 func NewResourceUsage(name string, data []models.TimeSeriesDatapoint) *ResourceUsageInfo {
@@ -79,4 +92,36 @@ func (info *ResourceUsageInfo) SetOptimizedUsage(value float64) {
 	defer info.lock.Unlock()
 
 	info.OptimizedUsage = value
+}
+
+func (info *ResourceUsageInfo) GetStandardQuota() float64 {
+	standard := info.Request
+	if info.Request == 0 {
+		standard = info.Limit
+		if info.Limit == 0 {
+			standard = -1
+		}
+	}
+	return standard
+}
+
+func (info *ResourceUsageInfo) GetStatus() string {
+	info.lock.Lock()
+	defer info.lock.Unlock()
+
+	const epsilon = 0.2
+
+	if len(info.Usage) < threshold {
+		return StatusUnknown
+	}
+
+	standard := info.GetStandardQuota()
+	if standard == -1 {
+		return StatusUnknown
+	}
+	eps := math.Abs(info.CurrentUsage-standard) / standard
+	if eps < epsilon {
+		return StatusHealty
+	}
+	return StatusNotHealty
 }

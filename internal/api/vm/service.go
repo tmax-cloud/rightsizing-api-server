@@ -12,6 +12,7 @@ import (
 	"rightsizing-api-server/internal/api/common/query"
 	"rightsizing-api-server/internal/api/common/resource"
 	"rightsizing-api-server/internal/api/common/rightsizing"
+	"rightsizing-api-server/internal/cache"
 	grpcclient "rightsizing-api-server/internal/grpc"
 	"rightsizing-api-server/internal/worker"
 	pb "rightsizing-api-server/proto"
@@ -22,6 +23,7 @@ const (
 )
 
 type vmService struct {
+	cache      *cache.Cache
 	worker     *worker.Worker
 	client     *grpcclient.Client
 	repository VMRepository
@@ -31,12 +33,14 @@ type vmService struct {
 var _ VMService = (*vmService)(nil)
 
 func NewVMService(
+	cache *cache.Cache,
 	worker *worker.Worker,
 	client *grpcclient.Client,
 	repository VMRepository,
 	logger *zap.Logger) VMService {
 
 	s := &vmService{
+		cache:      cache,
 		worker:     worker,
 		client:     client,
 		repository: repository,
@@ -44,6 +48,7 @@ func NewVMService(
 	}
 
 	worker.RegisterTask(taskName, s.forecastTask)
+
 	return s
 }
 

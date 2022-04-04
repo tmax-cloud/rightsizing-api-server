@@ -27,6 +27,7 @@ import (
 	"rightsizing-api-server/cmd/api-server/app/options"
 	"rightsizing-api-server/internal/api/pod"
 	"rightsizing-api-server/internal/api/vm"
+	cache2 "rightsizing-api-server/internal/cache"
 	db "rightsizing-api-server/internal/database"
 	grpcclient "rightsizing-api-server/internal/grpc"
 	"rightsizing-api-server/internal/worker"
@@ -54,7 +55,12 @@ func NewServer(opts *options.Options, logger *zap.Logger, errCh chan<- error) *S
 	}
 	client := grpcclient.NewClient(grpcConn)
 	// worker
-	worker, err := worker.NewWorker(logger, errCh)
+	cache, err := cache2.NewCache()
+	if err != nil {
+		logger.Fatal("Unable to init cache", zap.Error(err))
+	}
+
+	worker, err := worker.NewWorker(cache, logger, errCh)
 	if err != nil {
 		logger.Fatal("Unable to initialize worker", zap.Error(err))
 	}
@@ -83,13 +89,13 @@ func NewServer(opts *options.Options, logger *zap.Logger, errCh chan<- error) *S
 	// pod
 	podLogger := logger.Named("pod")
 	podRepository := pod.NewPodRepository(db)
-	podService := pod.NewPodService(worker, client, podRepository, podLogger)
-	pod.PodRouter(app.Group("/api/v1/pods"), podService, podLogger)
+	podService := pod.NewPodService(cache, worker, client, podRepository, podLogger)
+	pod.PodRouter(app.Group("/api/v1/"), podService, podLogger)
 	// vm
 	vmLogger := logger.Named("vm")
 	vmRepository := vm.NewVMRepository(db)
-	vmService := vm.NewVMService(worker, client, vmRepository, vmLogger)
-	vm.VMRouter(app.Group("/api/v1/vms"), vmService, vmLogger)
+	vmService := vm.NewVMService(cache, worker, client, vmRepository, vmLogger)
+	vm.VMRouter(app.Group("/api/v1/"), vmService, vmLogger)
 
 	app.Get("/dashboard", monitor.New())
 

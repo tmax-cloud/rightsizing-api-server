@@ -21,106 +21,72 @@ func PodRouter(route fiber.Router, ps PodService, logger *zap.Logger) {
 
 	// route.Use(auth.JWTMiddleware(), auth.GetDataFromJWT)
 
-	// resource-quota
-	route.Get("/resource-quota", handler.getAllQuota)
-	route.Get("/:namespace/:name/resource-quota", handler.getQuota)
+	route.Get("/pods", handler.getRightsizing)
+
+	rg := route.Group("/pods")
+	rg.Get("/clusterinfo", handler.getClusterInfo)
 	// resource usage history
-	route.Get("/:namespace/:name", handler.getHistory)
-	// resource usage history
-	route.Post("/:namespace/:name/forecast", handler.forecast)
-	route.Get("/:namespace/:name/forecast", handler.forecast)
-	route.Get("/:namespace/:name/forecast/status", handler.getForecastStatus)
-	route.Get("/:namespace/:name/forecast/result", handler.getForecastResult)
-	route.Get("/:uuid/forecast/status", handler.getForecastStatusByID)
-	route.Get("/:uuid/forecast/result", handler.getForecastResultByID)
+	rg.Post("/forecast", handler.forecast)
+	rg.Get("/forecast", handler.forecast)
+	rg.Get("/forecast/status", handler.getForecastStatus)
+	rg.Get("/forecast/result", handler.getForecastResult)
+	rg.Get("/forecast/:uuid/status", handler.getForecastStatusByID)
+	rg.Get("/forecast/:uuid/result", handler.getForecastResultByID)
 }
 
-// @Summary Get all pod resource quota
-// @Description Get all pod resource quota information from TimescaleDB
+// @Summary 클러스터 전반적인 지표들을 제공
 // @Accept  json
 // @Produce json
-// @Param start query string  false "start time"
-// @Param end   query string  false "end time"
-// @Success 200 {object} Pod list
+// @Success 200 {object} object
 // @Failure 400 {object} nil
 // @Failure 404 {object} nil
 // @Failure 500 {object} nil
 // @Router /api/v1/pods/resource-quota [get]
-func (h *PodHandler) getAllQuota(c *fiber.Ctx) error {
-	query, err := query.ParseAndValidate(c)
-	if err != nil {
-		h.logger.Debug("query parser error", zap.Error(err))
-		return c.Status(fiber.StatusBadRequest).JSON(err)
-	}
-
-	pods, err := h.ps.GetAllPodQuota(query)
+func (h *PodHandler) getClusterInfo(c *fiber.Ctx) error {
+	info, err := h.ps.GetClusterInfo()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(err)
 	}
-	if pods == nil {
-		return c.Status(fiber.StatusNotFound).JSON(nil)
-	}
-	return c.Status(fiber.StatusOK).JSON(pods)
+	return c.Status(fiber.StatusOK).JSON(info)
 }
 
-// @Summary Get pod resource quota
-// @Description Get pod resource quota information from TimescaleDB
+// @Summary pod의 리소스 정보 및 사용량 관련 정보 제공
+// @Description pod의 리소스 quota 정보와 사용량 및 사용량 기반의 최적 사용량을 제공한다.
+// namespace, name을 지정하지 않으면 모든 pod들에 대해 제공한다. 단, 둘 다 명시하거나 둘 다 명시하지 않아야함.
 // @Accept  json
 // @Produce json
-// @Param name      path  string  true  "the name of pod"
-// @Param namespace path  string  true  "the namespace of pod"
+// @Param name      path  string  false  "the name of pod"
+// @Param namespace path  string  false  "the namespace of pod"
 // @Param start     query string  false "start time"
 // @Param end       query string  false "end time"
-// @Success 200 {object} Pod
+// @Success 200 {object} Pod or Pod list
 // @Failure 400 {object} nil
 // @Failure 404 {object} nil
 // @Failure 500 {object} nil
-// @Router /api/v1/pods/{namespace}/{name}/resource-quota [get]
-func (h *PodHandler) getQuota(c *fiber.Ctx) error {
+// @Router /api/v1/pods [get]
+func (h *PodHandler) getRightsizing(c *fiber.Ctx) error {
 	query, err := query.ParseAndValidate(c)
 	if err != nil {
 		h.logger.Debug("query parser error", zap.Error(err))
 		return c.Status(fiber.StatusBadRequest).JSON(err)
 	}
+	if query.Namespace == "" && query.Name == "" {
+		pods, err := h.ps.GetAllPod(query)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(err)
+		}
+		return c.Status(fiber.StatusOK).JSON(pods)
+	} else {
+		pod, err := h.ps.GetPod(query)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(err)
+		}
 
-	pod, err := h.ps.GetPodQuota(query)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(err)
+		if pod == nil {
+			return c.Status(fiber.StatusNotFound).JSON(nil)
+		}
+		return c.Status(fiber.StatusOK).JSON(pod)
 	}
-	if pod == nil {
-		return c.Status(fiber.StatusNotFound).JSON(nil)
-	}
-	return c.Status(fiber.StatusOK).JSON(pod)
-}
-
-// @Summary Get usage history and optimization usage
-// @Description Get all resource usage history and optimization usage value
-// @Accept  json
-// @Produce json
-// @Param name      path  string  true  "the name of pod"
-// @Param namespace path  string  true  "the namespace of pod"
-// @Param start     query string  false "start time"
-// @Param end       query string  false "end time"
-// @Success 200 {object} Pod
-// @Failure 400 {object} nil
-// @Failure 404 {object} nil
-// @Failure 500 {object} nil
-// @Router /api/v1/pods/{namespace}/{name} [get]
-func (h *PodHandler) getHistory(c *fiber.Ctx) error {
-	query, err := query.ParseAndValidate(c)
-	if err != nil {
-		h.logger.Debug("query parser error", zap.Error(err))
-		return c.Status(fiber.StatusBadRequest).JSON(err)
-	}
-
-	pod, err := h.ps.GetPod(query)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(err)
-	}
-	if pod == nil {
-		return c.Status(fiber.StatusNotFound).JSON(nil)
-	}
-	return c.Status(fiber.StatusOK).JSON(pod)
 }
 
 // @Summary Post pod forecast task
@@ -152,8 +118,7 @@ func (h *PodHandler) forecast(c *fiber.Ctx) error {
 	})
 }
 
-// @Summary Get pod forecast result
-// @Description Get forecast result from TimescaleDB
+// @Summary 특정 pod의 forecast 완료 여부를 알려줌
 // @Accept  json
 // @Produce json
 // @Param name      path string true "the name of pod"
@@ -162,27 +127,26 @@ func (h *PodHandler) forecast(c *fiber.Ctx) error {
 // @Failure 400 {object} nil
 // @Failure 404 {object} nil
 // @Failure 500 {object} nil
-// @Router /api/v1/pods/{namespace}/{name}/forecast [get]
+// @Router /api/v1/pods/forecast/status [get]
 func (h *PodHandler) getForecastStatus(c *fiber.Ctx) error {
 	var (
-		id        = c.Locals("requestid").(string)
 		namespace = c.Params("namespace")
 		name      = c.Params("name")
 	)
 
-	id, err := h.ps.GetForecastStatus(namespace, name)
+	status, err := h.ps.GetForecastStatus(namespace, name)
 	if err != nil {
 		h.logger.Debug("failed to get status", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(err)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(map[string]interface{}{
-		"uuid": id,
+		status: status,
 	})
 }
 
-// @Summary Get pod forecast result
-// @Description Get forecast result from TimescaleDB
+// @Summary 특정 pod의 forecast 결과 제공
+// @Description forecast 작업이 끝나지 않은 경우 nil 값 제공
 // @Accept  json
 // @Produce json
 // @Param name      path string true "the name of pod"
@@ -191,10 +155,9 @@ func (h *PodHandler) getForecastStatus(c *fiber.Ctx) error {
 // @Failure 400 {object} nil
 // @Failure 404 {object} nil
 // @Failure 500 {object} nil
-// @Router /api/v1/pods/{namespace}/{name}/forecast [get]
+// @Router /api/v1/pods/forecast [get]
 func (h *PodHandler) getForecastResult(c *fiber.Ctx) error {
 	var (
-		id        = c.Locals("requestid").(string)
 		namespace = c.Params("namespace")
 		name      = c.Params("name")
 	)
@@ -209,13 +172,11 @@ func (h *PodHandler) getForecastResult(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(map[string]interface{}{
-		"uuid":   id,
 		"result": forecastUsage,
 	})
 }
 
-// @Summary Get pod forecast task status
-// @Description Get forecast task status
+// @Summary 사용자의 요청에 따라 발급한 forecast id를 통해서 forecast 완료 여부 제공
 // @Accept  json
 // @Produce json
 // @Param uuid path string true "the uuid of forecast task"
@@ -223,27 +184,25 @@ func (h *PodHandler) getForecastResult(c *fiber.Ctx) error {
 // @Failure 400 {object} nil
 // @Failure 404 {object} nil
 // @Failure 500 {object} nil
-// @Router /api/v1/pods/{uuid}/forecast/status [get]
+// @Router /api/v1/pods/forecast/{uuid}/status [get]
 func (h *PodHandler) getForecastStatusByID(c *fiber.Ctx) error {
 	var (
-		id   = c.Locals("requestid").(string)
 		uuid = c.Params("uuid")
 	)
 
-	forecastUsage, err := h.ps.GetForecastStatusByID(uuid)
+	status, err := h.ps.GetForecastStatusByID(uuid)
 	if err != nil {
-		h.logger.Debug("failed to get result", zap.Error(err))
+		h.logger.Debug("failed to get status", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(err)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(map[string]interface{}{
-		"id":     id,
-		"result": forecastUsage,
+		"status": status,
 	})
 }
 
-// @Summary Get pod forecast result
-// @Description Get forecast result
+// @Summary 사용자의 요청에 따라 발급한 forecast id를 통해서 forecast 결과를 제공
+// @Description id를 통해서 forecast 결과를 제공함. 만약 작업이 끝나지 않은 경우 nil 값 제공.
 // @Accept  json
 // @Produce json
 // @Param uuid path string true "the uuid of forecast task"
@@ -251,10 +210,9 @@ func (h *PodHandler) getForecastStatusByID(c *fiber.Ctx) error {
 // @Failure 400 {object} nil
 // @Failure 404 {object} nil
 // @Failure 500 {object} nil
-// @Router /api/v1/pods/{uuid}/forecast/result [get]
+// @Router /api/v1/pods/forecast/{uuid}/result [get]
 func (h *PodHandler) getForecastResultByID(c *fiber.Ctx) error {
 	var (
-		id   = c.Locals("requestid").(string)
 		uuid = c.Params("uuid")
 	)
 
@@ -268,7 +226,6 @@ func (h *PodHandler) getForecastResultByID(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(map[string]interface{}{
-		"id":     id,
 		"result": forecastUsage,
 	})
 }

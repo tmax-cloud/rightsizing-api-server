@@ -20,18 +20,18 @@ func VMRouter(route fiber.Router, vs VMService, logger *zap.Logger) {
 	}
 
 	// route.Use(auth.JWTMiddleware(), auth.GetDataFromJWT)
-	route.Get("/resource-quota", handler.getAllQuota)
-	route.Get("/:name/resource-quota", handler.getQuota)
+	route.Get("/vms/resource-quota", handler.getAllQuota)
+	route.Get("/vms/:name/resource-quota", handler.getQuota)
 
 	// resource usage history
-	route.Get("/:name", handler.getHistory)
+	route.Get("/vms/:name", handler.getHistory)
 	// resource usage history
-	route.Post("/:name/forecast", handler.forecast)
-	route.Get("/:name/forecast", handler.forecast)
-	route.Get("/:name/forecast/status", handler.getForecastStatus)
-	route.Get("/:name/forecast/result", handler.getForecastResult)
-	route.Get("/:uuid/forecast/status", handler.getForecastStatusByID)
-	route.Get("/:uuid/forecast/result", handler.getForecastResultByID)
+	route.Post("/vms/:name/forecast", handler.forecast)
+	route.Get("/vms/:name/forecast", handler.forecast)
+	route.Get("/vms/:name/forecast/status", handler.getForecastStatus)
+	route.Get("/vms/:name/forecast/result", handler.getForecastResult)
+	route.Get("/vms/:uuid/forecast/status", handler.getForecastStatusByID)
+	route.Get("/vms/:uuid/forecast/result", handler.getForecastResultByID)
 }
 
 // @Summary Get all vm resource quota

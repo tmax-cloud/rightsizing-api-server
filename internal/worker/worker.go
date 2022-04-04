@@ -10,15 +10,16 @@ import (
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/caarlos0/env/v6"
-	"github.com/dgraph-io/ristretto"
 	"go.uber.org/zap"
 
 	"rightsizing-api-server/internal/api/common/errors"
+	"rightsizing-api-server/internal/cache"
 )
 
 const (
 	cnfPath     = "/var/redis-config.yaml"
 	consumerTag = "forecast_worker"
+	cachePrefix = "forecast_"
 )
 
 type envConfig struct {
@@ -27,24 +28,19 @@ type envConfig struct {
 }
 
 type Worker struct {
-	cache  *ristretto.Cache
+	cache  *cache.Cache
 	server *machinery.Server
 	worker *machinery.Worker
 	logger *zap.Logger
 }
 
-func NewWorker(logger *zap.Logger, errCh chan<- error) (*Worker, error) {
+func NewWorker(cache *cache.Cache, logger *zap.Logger, errCh chan<- error) (*Worker, error) {
 	cnf, err := loadConfig()
 	if err != nil {
 		return nil, err
 	}
 
 	server, err := machinery.NewServer(cnf)
-	if err != nil {
-		return nil, err
-	}
-
-	cache, err := newCache()
 	if err != nil {
 		return nil, err
 	}
@@ -106,19 +102,6 @@ func loadConfig() (*config.Config, error) {
 	return cnf, nil
 }
 
-func newCache() (*ristretto.Cache, error) {
-	cache, err := ristretto.NewCache(&ristretto.Config{
-		NumCounters: 1e7,     // number of keys to track frequency of (10M).
-		MaxCost:     1 << 20, // maximum cost of cache (1GB).
-		BufferItems: 64,      // number of keys per Get buffer.
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	return cache, nil
-}
-
 func (w *Worker) preHandler(sig *tasks.Signature) {
 	w.logger.Info("start task",
 		zap.String("uuid", sig.UUID),
@@ -141,7 +124,7 @@ func (w *Worker) postHandler(sig *tasks.Signature) {
 func (w *Worker) SendTaskWithContext(ctx context.Context, task *tasks.Signature, name string) (*tasks.TaskState, error) {
 	// 같은 서버 내에서만 caching
 	// 서버 장애 발생 등 이유로 꺼져서 다시 켜진 경우 running 중이었던 작업 상태 보존이 매우 어려움
-	uuid, exist := w.cache.Get(name)
+	uuid, exist := w.cache.Get(cachePrefix + name)
 	if exist {
 		taskState, err := w.getTask(uuid.(string))
 		if err != nil {
@@ -156,13 +139,13 @@ func (w *Worker) SendTaskWithContext(ctx context.Context, task *tasks.Signature,
 	}
 	taskState := result.GetState()
 
-	w.cache.SetWithTTL(name, taskState.TaskUUID, 1, time.Minute*10)
+	w.cache.Set(cachePrefix+name, taskState.TaskUUID)
 
 	return taskState, nil
 }
 
 func (w *Worker) GetUUID(name string) (string, error) {
-	uuid, exist := w.cache.Get(name)
+	uuid, exist := w.cache.Get(cachePrefix + name)
 	if !exist {
 		return "", errors.NotFoundErr("uuid", name)
 	}
@@ -204,5 +187,4 @@ func (w *Worker) RegisterTasks(tasks map[string]interface{}) error {
 
 func (w *Worker) Stop(ctx context.Context) {
 	w.worker.Quit()
-	w.cache.Close()
 }

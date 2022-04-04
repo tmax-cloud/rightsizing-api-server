@@ -11,10 +11,10 @@ import (
 
 // Query 파라미터들 parsing 하기 위해 사용함
 type parseQuery struct {
-	Namespace string `query:"namespace,omitempty" description:"the namespace of pod"`
+	Namespace string `query:"namespace,omitempty" description:"the namespace of object (optional)"`
+	Name      string `query:"name,omitempty" description:"the name of object"`
 	StartTime string `query:"start,omitempty" json:"-"`
 	EndTime   string `query:"end,omitempty" json:"-"`
-	Forecast  string `query:"forecast,omitempty" json:"-"`
 }
 
 type Query struct {
@@ -23,14 +23,13 @@ type Query struct {
 	Name      string
 	StartTime time.Time
 	EndTime   time.Time
-	Forecast  bool
 }
 
 func (q parseQuery) ParseAndValidate(c *fiber.Ctx) (Query, error) {
 	var (
-		id        = c.Locals("requestid").(string)
-		namespace = c.Params("namespace", "")
-		name      = c.Params("name", "")
+		id = c.Locals("requestid").(string)
+		// namespace = c.Params("namespace", "")
+		// name      = c.Params("name", "")
 		// default time
 		startTime = time.Now().AddDate(0, 0, -7)
 		endTime   = time.Now()
@@ -58,8 +57,8 @@ func (q parseQuery) ParseAndValidate(c *fiber.Ctx) (Query, error) {
 
 	return Query{
 		ID:        id,
-		Namespace: namespace,
-		Name:      name,
+		Namespace: q.Namespace,
+		Name:      q.Name,
 		StartTime: startTime,
 		EndTime:   endTime,
 	}, nil

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	pb "rightsizing-api-server/proto"
+	"math"
+	"sort"
+	"time"
 
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"go.uber.org/zap"
@@ -12,16 +14,19 @@ import (
 	commonerrors "rightsizing-api-server/internal/api/common/errors"
 	"rightsizing-api-server/internal/api/common/query"
 	"rightsizing-api-server/internal/api/common/resource"
-	"rightsizing-api-server/internal/api/common/rightsizing"
+	"rightsizing-api-server/internal/cache"
 	grpcclient "rightsizing-api-server/internal/grpc"
 	"rightsizing-api-server/internal/worker"
+	pb "rightsizing-api-server/proto"
 )
 
 const (
-	taskName = "pod_forecast"
+	taskName       = "pod_forecast"
+	overallInfoKey = "overallInfo"
 )
 
 type podService struct {
+	cache      *cache.Cache
 	worker     *worker.Worker
 	client     *grpcclient.Client
 	repository PodRepository
@@ -31,11 +36,13 @@ type podService struct {
 var _ PodService = (*podService)(nil)
 
 func NewPodService(
+	cache *cache.Cache,
 	worker *worker.Worker,
 	client *grpcclient.Client,
 	r PodRepository,
 	logger *zap.Logger) PodService {
 	s := &podService{
+		cache:      cache,
 		worker:     worker,
 		client:     client,
 		repository: r,
@@ -47,58 +54,97 @@ func NewPodService(
 	return s
 }
 
-func (ps *podService) GetAllPodQuota(query query.Query) ([]*Pod, error) {
-	ps.logger.Debug("Get all pod quota")
+func GetStatus(a, b float64) string {
+	const threshold = 0.2
+	eps := math.Abs(a-b) / b
+	if eps < threshold {
+		return "optimized"
+	} else if a < b {
+		return "underallocated"
+	}
+	return "overallocated"
+}
 
-	pods, err := ps.repository.GetAllPodQuota(query)
-	if err != nil {
-		ps.logger.Error("failed to get pod from database", zap.Error(err))
-		return nil, err
+func (ps *podService) GetClusterInfo() (interface{}, error) {
+	var pods []*Pod
+	ps.logger.Debug("GetClusterInfo")
+
+	// 리소스 사용량 history 제외하고 저장되어 있음.
+	item, exist := ps.cache.Get(overallInfoKey)
+	if !exist {
+		var err error
+		query := query.Query{
+			StartTime: time.Now().AddDate(0, 0, -7),
+			EndTime:   time.Now(),
+		}
+
+		pods, err = ps.GetAllPod(query)
+		if err != nil {
+			ps.logger.Error("failed to get pod from database", zap.Error(err))
+			return nil, err
+		}
+
+		for _, pod := range pods {
+			for _, container := range pod.Containers {
+				for _, usage := range container.Usage {
+					usage.Usage = nil
+				}
+			}
+		}
+		ps.cache.SetWithTTL(overallInfoKey, pods, time.Minute*5)
+	} else {
+		pods = item.([]*Pod)
+	}
+
+	if pods == nil {
+		return nil, commonerrors.NotFoundErr("pod", "all")
+	}
+
+	averageUsages := map[string]float64{
+		"cpu":    0,
+		"memory": 0,
+	}
+	resourceStatus := map[string]map[string]int{
+		"cpu": {
+			"optimized":      0,
+			"underallocated": 0,
+			"overallocated":  0,
+		},
+		"memory": {
+			"optimized":      0,
+			"underallocated": 0,
+			"overallocated":  0,
+		},
 	}
 
 	for _, pod := range pods {
-		for _, container := range pod.Containers {
-			container.OptimizedUsage = make(map[string]float64)
-			for _, usage := range container.Usage {
-				if len(usage.Usage) == 0 {
-					continue
-				}
-				if err := rightsizing.Rightsizing(context.Background(), ps.client, usage); err != nil {
-					ps.logger.Error("failed while rightsizing", zap.Error(err))
-					return nil, err
-				}
-				container.OptimizedUsage[usage.ResourceName] = usage.OptimizedUsage
+		for name, usage := range pod.Usages {
+			standard := usage.GetStandardQuota()
+			averageUsages[name] += usage.CurrentUsage
+			if standard != -1 {
+				status := GetStatus(usage.CurrentUsage, standard)
+				resourceStatus[name][status] += 1
 			}
-			container.Usage = nil
 		}
 	}
-	return pods, nil
-}
-
-func (ps *podService) GetPodQuota(query query.Query) (*Pod, error) {
-	ps.logger.Debug("rightsizing pod",
-		zap.String("id", query.ID),
-		zap.String("pod", query.Name))
-
-	pod, err := ps.repository.GetPodQuota(query)
-	if err != nil {
-		ps.logger.Error("failed to get pod from database", zap.Error(err))
-		return nil, err
+	git
+	for name, usage := range averageUsages {
+		averageUsages[name] = usage / float64(len(pods))
 	}
 
-	if pod == nil {
-		return nil, commonerrors.NotFoundErr("pod", query.Name)
+	result := map[string]map[string]float64{
+		"cpu":    make(map[string]float64),
+		"memory": make(map[string]float64),
 	}
-	for _, container := range pod.Containers {
-		for _, usage := range container.Usage {
-			if err := rightsizing.Rightsizing(context.Background(), ps.client, usage); err != nil {
-				ps.logger.Error("failed while rightsizing", zap.Error(err))
-				return nil, err
-			}
-			container.Usage = nil
+
+	for resourceName, _ := range result {
+		result[resourceName]["average"] = averageUsages[resourceName]
+		for status, count := range resourceStatus[resourceName] {
+			result[resourceName][status] = float64(count)
 		}
 	}
-	return pod, nil
+
+	return result, nil
 }
 
 func (ps *podService) GetAllPod(query query.Query) ([]*Pod, error) {
@@ -118,15 +164,17 @@ func (ps *podService) GetAllPod(query query.Query) ([]*Pod, error) {
 	}
 
 	for _, pod := range pods {
-		for _, container := range pod.Containers {
-			for _, usage := range container.Usage {
-				if err := rightsizing.Rightsizing(context.Background(), ps.client, usage); err != nil {
-					ps.logger.Error("failed while rightsizing", zap.Error(err))
-					return nil, err
-				}
-			}
+		if err := pod.Rightsizing(ps.client); err != nil {
+			return nil, err
 		}
 	}
+
+	sort.Slice(pods, func(i, j int) bool {
+		if pods[i].Namespace == pods[j].Namespace {
+			return pods[i].Name < pods[j].Name
+		}
+		return pods[i].Namespace < pods[j].Namespace
+	})
 	return pods, nil
 }
 
@@ -148,12 +196,20 @@ func (ps *podService) GetPod(query query.Query) (*Pod, error) {
 		return nil, commonerrors.NotFoundErr("pod", query.Name)
 	}
 
+	if err := pod.Rightsizing(ps.client); err != nil {
+		return nil, err
+	}
+
+	pod.Usages = map[string]*resource.ResourceUsageInfo{
+		"cpu":    {ResourceName: "cpu"},
+		"memory": {ResourceName: "memory"},
+	}
 	for _, container := range pod.Containers {
-		for _, usage := range container.Usage {
-			if err := rightsizing.Rightsizing(context.Background(), ps.client, usage); err != nil {
-				ps.logger.Error("failed while rightsizing", zap.Error(err))
-				return nil, err
-			}
+		for name, usage := range container.Usage {
+			pod.Usages[name].Request += usage.Request
+			pod.Usages[name].Limit += usage.Limit
+			pod.Usages[name].CurrentUsage += usage.CurrentUsage
+			pod.Usages[name].OptimizedUsage += usage.OptimizedUsage
 		}
 	}
 	return pod, nil

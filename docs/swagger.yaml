@@ -3,26 +3,10 @@ definitions:
     properties:
       container_name:
         type: string
-      current_usages:
-        additionalProperties:
-          type: number
-        type: object
-      limits:
-        additionalProperties:
-          type: number
-        type: object
       namespace:
         type: string
-      optimized_usages:
-        additionalProperties:
-          type: number
-        type: object
       pod_name:
         type: string
-      requests:
-        additionalProperties:
-          type: number
-        type: object
       usages:
         additionalProperties:
           $ref: '#/definitions/resource.ResourceUsageInfo'
@@ -40,6 +24,11 @@ definitions:
         type: string
       namespace:
         type: string
+      usage:
+        additionalProperties:
+          $ref: '#/definitions/resource.ResourceUsageInfo'
+        description: total usage infromation
+        type: object
     type: object
   resource.ResourceUsageInfo:
     properties:
@@ -51,6 +40,10 @@ definitions:
         type: string
       optimized_usage:
         type: number
+      request:
+        type: number
+      status:
+        type: string
       usage:
         items:
           $ref: '#/definitions/resource.TimeSeriesDatapoint'
@@ -76,21 +69,19 @@ definitions:
 info:
   contact: {}
 paths:
-  /api/v1/pods/{namespace}/{name}:
+  /api/v1/pods:
     get:
       consumes:
       - application/json
-      description: Get all resource usage history and optimization usage value
+      description: pod의 리소스 quota 정보와 사용량 및 사용량 기반의 최적 사용량을 제공한다.
       parameters:
       - description: the name of pod
         in: path
         name: name
-        required: true
         type: string
       - description: the namespace of pod
         in: path
         name: namespace
-        required: true
         type: string
       - description: start time
         in: query
@@ -113,21 +104,21 @@ paths:
           description: Not Found
         "500":
           description: Internal Server Error
-      summary: Get usage history and optimization usage
+      summary: pod의 리소스 정보 및 사용량 관련 정보 제공
   /api/v1/pods/{namespace}/{name}/forecast:
     get:
       consumes:
       - application/json
-      description: Get forecast result from TimescaleDB
+      description: Create forecast task and result task UUID
       parameters:
-      - description: the name of pod
-        in: path
-        name: name
-        required: true
-        type: string
       - description: the namespace of pod
         in: path
         name: namespace
+        required: true
+        type: string
+      - description: the name of pod
+        in: path
+        name: name
         required: true
         type: string
       produces:
@@ -143,45 +134,7 @@ paths:
           description: Not Found
         "500":
           description: Internal Server Error
-      summary: Get pod forecast result
-  /api/v1/pods/{namespace}/{name}/resource-quota:
-    get:
-      consumes:
-      - application/json
-      description: Get pod resource quota information from TimescaleDB
-      parameters:
-      - description: the name of pod
-        in: path
-        name: name
-        required: true
-        type: string
-      - description: the namespace of pod
-        in: path
-        name: namespace
-        required: true
-        type: string
-      - description: start time
-        in: query
-        name: start
-        type: string
-      - description: end time
-        in: query
-        name: end
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/pod.Pod'
-        "400":
-          description: Bad Request
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      summary: Get pod resource quota
+      summary: Post pod forecast task
   /api/v1/pods/{uuid}/forecast/result:
     get:
       consumes:
@@ -207,11 +160,41 @@ paths:
         "500":
           description: Internal Server Error
       summary: Get vm forecast result
-  /api/v1/pods/{uuid}/forecast/status:
+  /api/v1/pods/forecast:
     get:
       consumes:
       - application/json
-      description: Get forecast task status
+      description: forecast 작업이 끝나지 않은 경우 nil 값 제공
+      parameters:
+      - description: the name of pod
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: the namespace of pod
+        in: path
+        name: namespace
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: 특정 pod의 forecast 결과 제공
+  /api/v1/pods/forecast/{uuid}/result:
+    get:
+      consumes:
+      - application/json
+      description: id를 통해서 forecast 결과를 제공함. 만약 작업이 끝나지 않은 경우 nil 값 제공.
       parameters:
       - description: the uuid of forecast task
         in: path
@@ -231,20 +214,16 @@ paths:
           description: Not Found
         "500":
           description: Internal Server Error
-      summary: Get pod forecast task status
-  /api/v1/pods/resource-quota:
+      summary: 사용자의 요청에 따라 발급한 forecast id를 통해서 forecast 결과를 제공
+  /api/v1/pods/forecast/{uuid}/status:
     get:
       consumes:
       - application/json
-      description: Get all pod resource quota information from TimescaleDB
       parameters:
-      - description: start time
-        in: query
-        name: start
-        type: string
-      - description: end time
-        in: query
-        name: end
+      - description: the uuid of forecast task
+        in: path
+        name: uuid
+        required: true
         type: string
       produces:
       - application/json
@@ -252,14 +231,61 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/pod.Pod'
+            type: object
         "400":
           description: Bad Request
         "404":
           description: Not Found
         "500":
           description: Internal Server Error
-      summary: Get all pod resource quota
+      summary: 사용자의 요청에 따라 발급한 forecast id를 통해서 forecast 완료 여부 제공
+  /api/v1/pods/forecast/status:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: the name of pod
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: the namespace of pod
+        in: path
+        name: namespace
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: 특정 pod의 forecast 완료 여부를 알려줌
+  /api/v1/pods/resource-quota:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: 클러스터 전반적인 지표들을 제공
   /api/v1/vms/{name}:
     get:
       consumes:

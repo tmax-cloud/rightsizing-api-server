@@ -24,12 +24,7 @@ func NewPodRepository(db *gorm.DB) PodRepository {
 }
 
 func (r *podRepository) GetAllPodQuota(query query.Query) ([]*Pod, error) {
-	var (
-		startTime = query.StartTime.Format("2006-01-02T15:04:05")
-		endTime   = query.EndTime.Format("2006-01-02T15:04:05")
-	)
-
-	containers, err := r.QueryResourceQuota(context.Background(), "", "", startTime, endTime)
+	containers, err := r.QueryResourceQuota(context.Background(), "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -53,33 +48,7 @@ func (r *podRepository) GetAllPodQuota(query query.Query) ([]*Pod, error) {
 	return pods, nil
 }
 
-func (r *podRepository) GetPodQuota(query query.Query) (*Pod, error) {
-	var (
-		namespace = query.Namespace
-		name      = query.Name
-		startTime = query.StartTime.Format("2006-01-02T15:04:05")
-		endTime   = query.EndTime.Format("2006-01-02T15:04:05")
-	)
-
-	containerMap, err := r.QueryResourceQuota(context.Background(), namespace, name, startTime, endTime)
-	if err != nil {
-		return nil, err
-	}
-
-	var containers []*Container
-	for _, container := range containerMap {
-		containers = append(containers, container)
-	}
-
-	return &Pod{
-		Namespace:  query.Namespace,
-		Name:       query.Name,
-		Containers: containers,
-	}, nil
-}
-
-func (r *podRepository) QueryResourceQuota(
-	ctx context.Context, namespace, name, startTime, endTime string) (map[string]*Container, error) {
+func (r *podRepository) QueryResourceQuota(ctx context.Context, namespace, name string) (map[string]*Container, error) {
 	var (
 		containerRequest []models.ContainerQuota
 		containerLimit   []models.ContainerQuota
@@ -121,11 +90,6 @@ func (r *podRepository) QueryResourceQuota(
 		return nil, err
 	}
 
-	containerUsages, err := r.Query(context.Background(), "", "", startTime, endTime)
-	if err != nil {
-		return nil, err
-	}
-
 	containers := make(map[string]*Container)
 	for _, request := range containerRequest {
 		name := UniqueContainerNameByField(request.Namespace, request.Pod, request.Name)
@@ -134,11 +98,15 @@ func (r *podRepository) QueryResourceQuota(
 				Namespace: request.Namespace,
 				Pod:       request.Pod,
 				Name:      request.Name,
-				Request:   make(map[string]float64),
-				Limit:     make(map[string]float64),
+				Usage:     make(map[string]*resource.ResourceUsageInfo),
 			}
 		}
-		containers[name].Request[request.Resource] = request.Value
+		if _, exist := containers[name].Usage[request.Resource]; !exist {
+			containers[name].Usage[request.Resource] = &resource.ResourceUsageInfo{
+				ResourceName: request.Resource,
+			}
+		}
+		containers[name].Usage[request.Resource].Request = request.Value
 	}
 	for _, limit := range containerLimit {
 		name := UniqueContainerNameByField(limit.Namespace, limit.Pod, limit.Name)
@@ -147,28 +115,15 @@ func (r *podRepository) QueryResourceQuota(
 				Namespace: limit.Namespace,
 				Pod:       limit.Pod,
 				Name:      limit.Name,
-				Request:   make(map[string]float64),
-				Limit:     make(map[string]float64),
+				Usage:     make(map[string]*resource.ResourceUsageInfo),
 			}
 		}
-		containers[name].Limit[limit.Resource] = limit.Value
-	}
-
-	for _, usage := range containerUsages {
-		name := UniqueContainerNameByField(usage.Namespace, usage.Pod, usage.Name)
-		if _, exist := containers[name]; !exist {
-			containers[name] = &Container{
-				Namespace:    usage.Namespace,
-				Pod:          usage.Pod,
-				Name:         usage.Name,
-				Usage:        make(map[string]*resource.ResourceUsageInfo),
-				CurrentUsage: make(map[string]float64),
-				Request:      make(map[string]float64),
-				Limit:        make(map[string]float64),
+		if _, exist := containers[name].Usage[limit.Resource]; !exist {
+			containers[name].Usage[limit.Resource] = &resource.ResourceUsageInfo{
+				ResourceName: limit.Resource,
 			}
 		}
-		containers[name].Usage = usage.Usage
-		containers[name].CurrentUsage = usage.CurrentUsage
+		containers[name].Usage[limit.Resource].Limit = limit.Value
 	}
 	return containers, nil
 }
@@ -184,7 +139,7 @@ func (r *podRepository) GetAllPod(query query.Query) ([]*Pod, error) {
 		return nil, err
 	}
 
-	var podMap map[string]*Pod
+	podMap := make(map[string]*Pod)
 	for _, container := range containers {
 		name := uniqueName(container.Namespace, container.Pod)
 		if _, exist := podMap[name]; !exist {
@@ -192,6 +147,10 @@ func (r *podRepository) GetAllPod(query query.Query) ([]*Pod, error) {
 				Namespace:  container.Namespace,
 				Name:       container.Pod,
 				Containers: make([]*Container, 0),
+				Usages: map[string]*resource.ResourceUsageInfo{
+					"cpu":    {ResourceName: "cpu"},
+					"memory": {ResourceName: "memory"},
+				},
 			}
 		}
 		podMap[name].Containers = append(podMap[name].Containers, container)
@@ -199,6 +158,13 @@ func (r *podRepository) GetAllPod(query query.Query) ([]*Pod, error) {
 
 	var pods []*Pod
 	for _, pod := range podMap {
+		for _, container := range pod.Containers {
+			for name, usage := range container.Usage {
+				pod.Usages[name].Request += usage.Request
+				pod.Usages[name].Limit += usage.Limit
+				pod.Usages[name].CurrentUsage += usage.CurrentUsage
+			}
+		}
 		pods = append(pods, pod)
 	}
 	return pods, nil
@@ -217,11 +183,25 @@ func (r *podRepository) GetPod(query query.Query) (*Pod, error) {
 		return nil, err
 	}
 
-	return &Pod{
+	pod := &Pod{
 		Namespace:  query.Namespace,
 		Name:       query.Name,
 		Containers: containers,
-	}, nil
+		Usages: map[string]*resource.ResourceUsageInfo{
+			"cpu":    {ResourceName: "cpu"},
+			"memory": {ResourceName: "memory"},
+		},
+	}
+
+	for _, container := range pod.Containers {
+		for name, usage := range container.Usage {
+			pod.Usages[name].Request += usage.Request
+			pod.Usages[name].Limit += usage.Limit
+			pod.Usages[name].CurrentUsage += usage.CurrentUsage
+		}
+	}
+
+	return pod, nil
 }
 
 func (r *podRepository) Query(ctx context.Context, namespace, name, startTime, endTime string) ([]*Container, error) {
@@ -268,19 +248,35 @@ func (r *podRepository) Query(ctx context.Context, namespace, name, startTime, e
 			name := UniqueContainerName(&containerUsage)
 			if _, exist := containerMap[name]; !exist {
 				containerMap[name] = &Container{
-					Namespace:    containerUsage.Namespace,
-					Pod:          containerUsage.Pod,
-					Name:         containerUsage.Name,
-					Usage:        make(map[string]*resource.ResourceUsageInfo),
-					CurrentUsage: make(map[string]float64),
+					Namespace: containerUsage.Namespace,
+					Pod:       containerUsage.Pod,
+					Name:      containerUsage.Name,
+					Usage:     make(map[string]*resource.ResourceUsageInfo),
 				}
 			}
 			usage := resource.NewResourceUsage(metricName, containerUsage.Usage)
 			containerMap[name].Usage[metricName] = usage
-			containerMap[name].CurrentUsage[metricName] = usage.CurrentUsage
 		}
 	}
 
+	containerQuotas, err := r.QueryResourceQuota(ctx, namespace, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, container := range containerQuotas {
+		name := UniqueContainerNameByField(container.Namespace, container.Pod, container.Name)
+		if _, exist := containerMap[name]; !exist {
+			containerMap[name] = container
+		} else {
+			for _, usage := range container.Usage {
+				if _, exist := containerMap[name].Usage[usage.ResourceName]; !exist {
+					continue
+				}
+				containerMap[name].Usage[usage.ResourceName].Request = usage.Request
+				containerMap[name].Usage[usage.ResourceName].Limit = usage.Limit
+			}
+		}
+	}
 	var containers []*Container
 	for _, container := range containerMap {
 		containers = append(containers, container)

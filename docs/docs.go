@@ -23,73 +23,28 @@ var doc = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/v1/pods/resource-quota": {
+        "/api/v1/pods": {
             "get": {
-                "description": "Get all pod resource quota information from TimescaleDB",
+                "description": "pod의 리소스 quota 정보와 사용량 및 사용량 기반의 최적 사용량을 제공한다.",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
-                "summary": "Get all pod resource quota",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "start time",
-                        "name": "start",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "end time",
-                        "name": "end",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/pod.Pod"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request"
-                    },
-                    "404": {
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "description": "Internal Server Error"
-                    }
-                }
-            }
-        },
-        "/api/v1/pods/{namespace}/{name}": {
-            "get": {
-                "description": "Get all resource usage history and optimization usage value",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "summary": "Get usage history and optimization usage",
+                "summary": "pod의 리소스 정보 및 사용량 관련 정보 제공",
                 "parameters": [
                     {
                         "type": "string",
                         "description": "the name of pod",
                         "name": "name",
-                        "in": "path",
-                        "required": true
+                        "in": "path"
                     },
                     {
                         "type": "string",
                         "description": "the namespace of pod",
                         "name": "namespace",
-                        "in": "path",
-                        "required": true
+                        "in": "path"
                     },
                     {
                         "type": "string",
@@ -123,16 +78,16 @@ var doc = `{
                 }
             }
         },
-        "/api/v1/pods/{namespace}/{name}/forecast": {
+        "/api/v1/pods/forecast": {
             "get": {
-                "description": "Get forecast result from TimescaleDB",
+                "description": "forecast 작업이 끝나지 않은 경우 nil 값 제공",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
-                "summary": "Get pod forecast result",
+                "summary": "특정 pod의 forecast 결과 제공",
                 "parameters": [
                     {
                         "type": "string",
@@ -168,16 +123,15 @@ var doc = `{
                 }
             }
         },
-        "/api/v1/pods/{namespace}/{name}/resource-quota": {
+        "/api/v1/pods/forecast/status": {
             "get": {
-                "description": "Get pod resource quota information from TimescaleDB",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
-                "summary": "Get pod resource quota",
+                "summary": "특정 pod의 forecast 완료 여부를 알려줌",
                 "parameters": [
                     {
                         "type": "string",
@@ -192,25 +146,13 @@ var doc = `{
                         "name": "namespace",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "start time",
-                        "name": "start",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "end time",
-                        "name": "end",
-                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pod.Pod"
+                            "type": "object"
                         }
                     },
                     "400": {
@@ -225,16 +167,16 @@ var doc = `{
                 }
             }
         },
-        "/api/v1/pods/{uuid}/forecast/result": {
+        "/api/v1/pods/forecast/{uuid}/result": {
             "get": {
-                "description": "Get forecast result",
+                "description": "id를 통해서 forecast 결과를 제공함. 만약 작업이 끝나지 않은 경우 nil 값 제공.",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
-                "summary": "Get vm forecast result",
+                "summary": "사용자의 요청에 따라 발급한 forecast id를 통해서 forecast 결과를 제공",
                 "parameters": [
                     {
                         "type": "string",
@@ -263,16 +205,126 @@ var doc = `{
                 }
             }
         },
-        "/api/v1/pods/{uuid}/forecast/status": {
+        "/api/v1/pods/forecast/{uuid}/status": {
             "get": {
-                "description": "Get forecast task status",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
-                "summary": "Get pod forecast task status",
+                "summary": "사용자의 요청에 따라 발급한 forecast id를 통해서 forecast 완료 여부 제공",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "the uuid of forecast task",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "404": {
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/api/v1/pods/resource-quota": {
+            "get": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "클러스터 전반적인 지표들을 제공",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "404": {
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/api/v1/pods/{namespace}/{name}/forecast": {
+            "get": {
+                "description": "Create forecast task and result task UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Post pod forecast task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "the namespace of pod",
+                        "name": "namespace",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "the name of pod",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "404": {
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/api/v1/pods/{uuid}/forecast/result": {
+            "get": {
+                "description": "Get forecast result",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Get vm forecast result",
                 "parameters": [
                     {
                         "type": "string",
@@ -540,35 +592,11 @@ var doc = `{
                 "container_name": {
                     "type": "string"
                 },
-                "current_usages": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "number"
-                    }
-                },
-                "limits": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "number"
-                    }
-                },
                 "namespace": {
                     "type": "string"
                 },
-                "optimized_usages": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "number"
-                    }
-                },
                 "pod_name": {
                     "type": "string"
-                },
-                "requests": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "number"
-                    }
                 },
                 "usages": {
                     "description": "Resource usage list",
@@ -594,6 +622,13 @@ var doc = `{
                 },
                 "namespace": {
                     "type": "string"
+                },
+                "usage": {
+                    "description": "total usage infromation",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/resource.ResourceUsageInfo"
+                    }
                 }
             }
         },
@@ -611,6 +646,12 @@ var doc = `{
                 },
                 "optimized_usage": {
                     "type": "number"
+                },
+                "request": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
                 },
                 "usage": {
                     "type": "array",
