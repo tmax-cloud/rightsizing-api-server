@@ -127,7 +127,7 @@ func (ps *podService) GetClusterInfo() (interface{}, error) {
 			}
 		}
 	}
-	git
+
 	for name, usage := range averageUsages {
 		averageUsages[name] = usage / float64(len(pods))
 	}

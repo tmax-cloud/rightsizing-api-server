@@ -39,6 +39,6 @@ val(container_id) container,
 val(resource_id) resource, 
 value
 FROM prom_metric.kube_pod_container_resource_limits `
-	allQuotaQuery    = `WHERE time >= now() - interval '5m' AND value != 'Nan' AND resource_id != 2307 ORDER BY namespace_id, pod_id, container_id, resource_id, time DESC`
-	targetQuotaQuery = `WHERE time >= now() - interval '5m' AND val(namespace_id) = ? AND val(pod_id) = ? AND value != 'NaN' AND resource_id != 2307 ORDER BY namespace_id, pod_id, container_id, resource_id, time DESC`
+	allQuotaQuery    = `WHERE time >= now() - interval '5m' AND value != 'Nan' AND val(resource_id) IN ('cpu', 'memory') ORDER BY namespace_id, pod_id, container_id, resource_id, time DESC`
+	targetQuotaQuery = `WHERE time >= now() - interval '5m' AND val(namespace_id) = ? AND val(pod_id) = ? AND value != 'NaN' AND val(resource_id) IN ('cpu', 'memory') ORDER BY namespace_id, pod_id, container_id, resource_id, time DESC`
 )

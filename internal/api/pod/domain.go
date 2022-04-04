@@ -2,10 +2,10 @@ package pod
 
 import (
 	"context"
-	grpcclient "rightsizing-api-server/internal/grpc"
 
 	"rightsizing-api-server/internal/api/common/query"
 	"rightsizing-api-server/internal/api/common/resource"
+	grpcclient "rightsizing-api-server/internal/grpc"
 	"rightsizing-api-server/internal/models"
 )
 
