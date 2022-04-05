@@ -59,7 +59,7 @@ spec:
     spec:
       containers:
       - name: api-server
-        image: tmaxcloudck/rightsizing-api-server:test
+        image: tmaxcloudck/rightsizing-api-server:demo
         ports:
         - containerPort: 8000
         args:
